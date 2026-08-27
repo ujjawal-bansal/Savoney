@@ -44,8 +44,11 @@ RUN apk add --no-cache tini
 ENV NODE_ENV=production
 ENV PORT=4000
 
+# npm workspaces hoist every dependency to the root `node_modules`, so there is
+# no per-workspace directory to copy. That root tree also holds the
+# `@savoney/shared -> ../../shared` symlink the server resolves through, which
+# is why `shared/` below has to land at the path the link points at.
 COPY --from=prod-deps /app/node_modules ./node_modules
-COPY --from=prod-deps /app/server/node_modules ./server/node_modules
 COPY --from=build /app/shared/dist ./shared/dist
 COPY --from=build /app/shared/package.json ./shared/package.json
 COPY --from=build /app/server/dist ./server/dist
