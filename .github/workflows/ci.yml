@@ -198,6 +198,11 @@ jobs:
             curl -sf http://127.0.0.1:8080/ > /dev/null && break
             sleep 1
           done
+          if ! curl -sf http://127.0.0.1:8080/ > /dev/null; then
+            echo "::error::web container never served a response"
+            docker logs savoney-web
+            exit 1
+          fi
           curl -sf http://127.0.0.1:8080/ | grep -q '<div id="root">'
           # Client-side routing: a deep link must return the app, not a 404.
           curl -sf http://127.0.0.1:8080/transactions | grep -q '<div id="root">'
