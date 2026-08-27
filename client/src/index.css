@@ -1,12 +1,193 @@
-body {
-  margin: 0;
-  font-family: Inter, system-ui, sans-serif;
+@import 'tailwindcss';
+
+/*
+ * Dark mode is driven by a class on <html> rather than the `prefers-color-scheme`
+ * media query alone, so an explicit user choice can override the OS setting.
+ * The resolver in `use-theme.ts` writes that class.
+ */
+@custom-variant dark (&:where(.dark, .dark *));
+
+@theme {
+  --font-sans:
+    'Inter var', 'Inter', ui-sans-serif, system-ui, -apple-system, 'Segoe UI', sans-serif;
+  --font-mono: 'JetBrains Mono', ui-monospace, 'SF Mono', Menlo, monospace;
+
+  /* Brand ramp. Indigo reads as financial-serious without the banking cliché of navy. */
+  --color-brand-50: #eef2ff;
+  --color-brand-100: #e0e7ff;
+  --color-brand-200: #c7d2fe;
+  --color-brand-300: #a5b4fc;
+  --color-brand-400: #818cf8;
+  --color-brand-500: #6366f1;
+  --color-brand-600: #4f46e5;
+  --color-brand-700: #4338ca;
+  --color-brand-800: #3730a3;
+  --color-brand-900: #312e81;
+  --color-brand-950: #1e1b4b;
+
+  /*
+   * Money semantics. Deliberately not pure red/green: roughly 1 in 12 men has
+   * red-green colour deficiency, so amount colour is always paired with a sign
+   * or an icon and never carries meaning alone.
+   */
+  --color-positive: #059669;
+  --color-positive-soft: #d1fae5;
+  --color-negative: #e11d48;
+  --color-negative-soft: #ffe4e6;
+  --color-caution: #d97706;
+  --color-caution-soft: #fef3c7;
+
+  --radius-card: 1rem;
+  --shadow-card: 0 1px 2px 0 rgb(15 23 42 / 0.04), 0 8px 24px -12px rgb(15 23 42 / 0.12);
+  --shadow-card-dark: 0 1px 2px 0 rgb(0 0 0 / 0.3), 0 8px 24px -12px rgb(0 0 0 / 0.5);
+
+  --ease-out-quint: cubic-bezier(0.22, 1, 0.36, 1);
 }
 
-* {
-  box-sizing: border-box;
+/*
+ * Semantic surface tokens.
+ *
+ * Components reference these rather than raw palette steps, so the entire
+ * light/dark inversion happens in one place instead of being sprinkled across
+ * every component as `dark:` variants.
+ */
+@layer base {
+  :root {
+    --surface: #ffffff;
+    --surface-sunken: #f8fafc;
+    --surface-raised: #ffffff;
+    --surface-hover: #f1f5f9;
+    --border-subtle: #e2e8f0;
+    --border-strong: #cbd5e1;
+    --text-primary: #0f172a;
+    --text-secondary: #475569;
+    --text-muted: #94a3b8;
+    --ring: #6366f1;
+    color-scheme: light;
+  }
+
+  .dark {
+    --surface: #0b1120;
+    --surface-sunken: #060911;
+    --surface-raised: #131c31;
+    --surface-hover: #1c273f;
+    --border-subtle: #1e293b;
+    --border-strong: #334155;
+    --text-primary: #f1f5f9;
+    --text-secondary: #94a3b8;
+    --text-muted: #64748b;
+    --ring: #818cf8;
+    color-scheme: dark;
+
+    /* Soft fills need far lower alpha on a dark ground to avoid glowing. */
+    --color-positive-soft: #043d2c;
+    --color-negative-soft: #4c0519;
+    --color-caution-soft: #451a03;
+  }
+
+  * {
+    border-color: var(--border-subtle);
+  }
+
+  body {
+    background-color: var(--surface-sunken);
+    color: var(--text-primary);
+    font-family: var(--font-sans);
+    -webkit-font-smoothing: antialiased;
+    text-rendering: optimizeLegibility;
+  }
+
+  /* A single, consistent focus treatment. Never remove it — keyboard users rely
+     on it entirely, and `:focus-visible` already hides it from mouse users. */
+  :focus-visible {
+    outline: 2px solid var(--ring);
+    outline-offset: 2px;
+    border-radius: 0.375rem;
+  }
+
+  /* Respect a user's reduced-motion setting rather than animating regardless. */
+  @media (prefers-reduced-motion: reduce) {
+    *,
+    *::before,
+    *::after {
+      animation-duration: 0.01ms !important;
+      animation-iteration-count: 1 !important;
+      transition-duration: 0.01ms !important;
+      scroll-behavior: auto !important;
+    }
+  }
 }
 
-#root {
-  min-height: 100vh;
+@layer utilities {
+  /* Figures line up column-to-column only with tabular figures; proportional
+     digits make a table of amounts visibly ragged. */
+  .tabular {
+    font-variant-numeric: tabular-nums;
+    font-feature-settings: 'tnum';
+  }
+
+  .surface {
+    background-color: var(--surface);
+  }
+  .surface-raised {
+    background-color: var(--surface-raised);
+  }
+  .surface-sunken {
+    background-color: var(--surface-sunken);
+  }
+  .text-primary {
+    color: var(--text-primary);
+  }
+  .text-secondary {
+    color: var(--text-secondary);
+  }
+  .text-muted {
+    color: var(--text-muted);
+  }
+  .border-subtle {
+    border-color: var(--border-subtle);
+  }
+  .border-strong {
+    border-color: var(--border-strong);
+  }
+
+  .card-shadow {
+    box-shadow: var(--shadow-card);
+  }
+  .dark .card-shadow {
+    box-shadow: var(--shadow-card-dark);
+  }
+
+  @keyframes shimmer {
+    100% {
+      transform: translateX(100%);
+    }
+  }
+  .skeleton {
+    position: relative;
+    overflow: hidden;
+    background-color: var(--surface-hover);
+  }
+  .skeleton::after {
+    content: '';
+    position: absolute;
+    inset: 0;
+    transform: translateX(-100%);
+    background-image: linear-gradient(90deg, transparent, rgb(255 255 255 / 0.16), transparent);
+    animation: shimmer 1.6s infinite;
+  }
+
+  @keyframes fade-rise {
+    from {
+      opacity: 0;
+      transform: translateY(6px);
+    }
+    to {
+      opacity: 1;
+      transform: none;
+    }
+  }
+  .animate-fade-rise {
+    animation: fade-rise 0.32s var(--ease-out-quint) both;
+  }
 }

@@ -1,0 +1,109 @@
+# Render Blueprint for Savoney.
+#
+# Deploy: Render Dashboard > New > Blueprint > pick this repo.
+# Render reads this file and creates both services.
+#
+# Two things are NOT in here and must be set by hand, because they are secrets:
+#   MONGO_URI          the Atlas connection string
+#   SMTP_URL           mail transport for password-reset links
+# Both are marked `sync: false`, so Render prompts for them at deploy time and
+# never stores them in the repo.
+
+services:
+  # ---------------------------------------------------------------------------
+  # API
+  # ---------------------------------------------------------------------------
+  - type: web
+    name: savoney-api
+    runtime: docker
+    dockerfilePath: ./server/Dockerfile
+    # The build context is the repository root: the API imports the
+    # @savoney/shared workspace, which lives outside server/.
+    dockerContext: .
+    plan: free
+    region: oregon
+    healthCheckPath: /api/ready
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: PORT
+        value: 4000
+
+      # Provided at deploy time; never committed.
+      - key: MONGO_URI
+        sync: false
+      - key: SMTP_URL
+        sync: false
+
+      # Generated once by Render and then held constant. Rotating either one
+      # signs everybody out, which is the intended emergency lever.
+      - key: JWT_ACCESS_SECRET
+        generateValue: true
+      - key: JWT_REFRESH_SECRET
+        generateValue: true
+
+      # The browser only ever talks to the static site, which rewrites /api to
+      # this service, so these stay same-origin.
+      #
+      # Written out in full rather than with `fromService`, which yields a bare
+      # hostname: APP_URL is concatenated into password-reset links and
+      # CORS_ORIGINS is compared against the browser's Origin header, and both
+      # need the scheme. UPDATE THESE if Render assigns a different hostname
+      # (it appends a suffix when the name is already taken).
+      - key: APP_URL
+        value: https://savoney-web.onrender.com
+      - key: CORS_ORIGINS
+        value: https://savoney-web.onrender.com
+      - key: COOKIE_SAMESITE
+        value: strict
+
+      # Render terminates TLS at one proxy hop in front of the container.
+      # Trusting more hops than actually exist would let a client spoof
+      # X-Forwarded-For and evade rate limiting.
+      - key: TRUST_PROXY
+        value: 1
+
+      - key: LOG_LEVEL
+        value: info
+      # Public API docs are a deliberate choice for a portfolio project.
+      # Set to false if this ever holds real users' data.
+      - key: ENABLE_DOCS
+        value: true
+
+  # ---------------------------------------------------------------------------
+  # Client
+  # ---------------------------------------------------------------------------
+  - type: web
+    name: savoney-web
+    runtime: static
+    plan: free
+    # The shared workspace must be compiled before the client can typecheck.
+    buildCommand: npm ci && npm run build:shared && npm run build -w @savoney/client
+    staticPublishPath: ./client/dist
+    routes:
+      # Proxy the API through this origin. This is what keeps the httpOnly
+      # refresh cookie first-party: served from a second host it would be a
+      # cross-site cookie, and a SameSite=Strict cookie is simply never sent,
+      # so every page reload would silently sign the user out.
+      - type: rewrite
+        source: /api/*
+        destination: https://savoney-api.onrender.com/api/*
+      # React Router owns every other path; without this, a deep link or a
+      # refresh anywhere but / returns a 404 from the static host.
+      - type: rewrite
+        source: /*
+        destination: /index.html
+    headers:
+      - path: /*
+        name: X-Content-Type-Options
+        value: nosniff
+      - path: /*
+        name: X-Frame-Options
+        value: DENY
+      - path: /*
+        name: Referrer-Policy
+        value: strict-origin-when-cross-origin
+      - path: /assets/*
+        name: Cache-Control
+        # Asset filenames are content-hashed, so they can be cached forever.
+        value: public, max-age=31536000, immutable
