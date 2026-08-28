@@ -1,0 +1,65 @@
+# Full stack: MongoDB, the API, and the built client behind nginx.
+#
+#   cp .env.docker.example .env && docker compose up --build
+#   docker compose exec api node server/dist/db/seed.js   # optional demo data
+#
+# The web container proxies /api to the API container, so the browser only ever
+# talks to one origin and the refresh cookie stays first-party.
+
+services:
+  mongo:
+    image: mongo:8
+    restart: unless-stopped
+    environment:
+      MONGO_INITDB_ROOT_USERNAME: ${MONGO_USER:-savoney}
+      MONGO_INITDB_ROOT_PASSWORD: ${MONGO_PASSWORD:?set MONGO_PASSWORD in .env}
+      MONGO_INITDB_DATABASE: savoney
+    volumes:
+      - mongo-data:/data/db
+    # Not published to the host: only the API needs to reach it, and exposing a
+    # database port is how databases end up on the public internet.
+    expose:
+      - '27017'
+    healthcheck:
+      test: ['CMD', 'mongosh', '--quiet', '--eval', "db.adminCommand('ping').ok"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+
+  api:
+    build:
+      context: .
+      dockerfile: server/Dockerfile
+    restart: unless-stopped
+    depends_on:
+      mongo:
+        # Wait for a database that actually answers, not merely a started
+        # container — otherwise the API's fail-fast boot loses the race.
+        condition: service_healthy
+    environment:
+      NODE_ENV: production
+      PORT: 4000
+      MONGO_URI: mongodb://${MONGO_USER:-savoney}:${MONGO_PASSWORD}@mongo:27017/savoney?authSource=admin
+      JWT_ACCESS_SECRET: ${JWT_ACCESS_SECRET:?set JWT_ACCESS_SECRET in .env}
+      JWT_REFRESH_SECRET: ${JWT_REFRESH_SECRET:?set JWT_REFRESH_SECRET in .env}
+      CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost:8080}
+      LOG_LEVEL: ${LOG_LEVEL:-info}
+      # nginx sits in front, so trust exactly one proxy hop for client IPs.
+      TRUST_PROXY: '1'
+      ENABLE_DOCS: ${ENABLE_DOCS:-true}
+    expose:
+      - '4000'
+
+  web:
+    build:
+      context: .
+      dockerfile: client/Dockerfile
+    restart: unless-stopped
+    depends_on:
+      - api
+    ports:
+      - '${WEB_PORT:-8080}:80'
+
+volumes:
+  mongo-data:

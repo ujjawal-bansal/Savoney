@@ -1,0 +1,43 @@
+{
+  "name": "savoney",
+  "private": true,
+  "version": "2.0.0",
+  "description": "Savoney \u2014 a full-stack personal finance platform. TypeScript monorepo.",
+  "type": "module",
+  "engines": {
+    "node": ">=20.11"
+  },
+  "workspaces": [
+    "shared",
+    "server",
+    "client"
+  ],
+  "scripts": {
+    "build": "npm run build -w @savoney/shared && npm run build -w @savoney/server && npm run build -w @savoney/client",
+    "build:shared": "npm run build -w @savoney/shared",
+    "dev": "npm run build:shared && concurrently -n server,client -c cyan,magenta \"npm:dev:server\" \"npm:dev:client\"",
+    "dev:server": "npm run dev -w @savoney/server",
+    "dev:client": "npm run dev -w @savoney/client",
+    "test": "npm run build:shared && npm run test -w @savoney/server && npm run test -w @savoney/client",
+    "test:server": "npm run build:shared && npm run test -w @savoney/server",
+    "test:client": "npm run test -w @savoney/client",
+    "typecheck": "npm run build:shared && npm run typecheck -w @savoney/server && npm run typecheck -w @savoney/client",
+    "lint": "eslint .",
+    "lint:fix": "eslint . --fix",
+    "format": "prettier --write \"**/*.{ts,tsx,js,jsx,json,md,css}\"",
+    "format:check": "prettier --check \"**/*.{ts,tsx,js,jsx,json,md,css}\"",
+    "seed": "npm run build:shared && npm run seed -w @savoney/server",
+    "verify": "npm run format:check && npm run lint && npm run typecheck && npm run test && npm run build"
+  },
+  "devDependencies": {
+    "@eslint/js": "^10.0.1",
+    "concurrently": "^10.0.5",
+    "eslint": "^10.9.1",
+    "eslint-plugin-react-hooks": "^7.1.1",
+    "eslint-plugin-react-refresh": "^0.5.5",
+    "globals": "^17.11.0",
+    "prettier": "^3.9.6",
+    "typescript": "~5.9.3",
+    "typescript-eslint": "^8.68.0"
+  }
+}

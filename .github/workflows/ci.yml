@@ -1,0 +1,210 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+# A new push to the same branch makes the in-flight run obsolete.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  NODE_VERSION: '22'
+
+jobs:
+  quality:
+    name: Lint, types and format
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+
+      - run: npm ci
+
+      # Both the server and the client import @savoney/shared, so it must be
+      # compiled before anything can typecheck.
+      - name: Build shared package
+        run: npm run build:shared
+
+      - name: Check formatting
+        run: npm run format:check
+
+      - name: Lint
+        run: npm run lint
+
+      - name: Typecheck server
+        run: npm run typecheck -w @savoney/server
+
+      - name: Typecheck client
+        run: npm run typecheck -w @savoney/client
+
+  test-server:
+    name: Server tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+
+      - run: npm ci
+      - run: npm run build:shared
+
+      # mongodb-memory-server downloads a MongoDB binary on first use. The
+      # version is pinned in tests/global-setup.ts, so the cache key can be too.
+      - name: Cache MongoDB binaries
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/mongodb-binaries
+          key: mongodb-binaries-${{ runner.os }}-8.0.4
+
+      - name: Run tests with coverage
+        run: npm run test:coverage -w @savoney/server
+
+      - name: Upload coverage
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: server-coverage
+          path: server/coverage
+          retention-days: 7
+
+  test-client:
+    name: Client tests and build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+
+      - run: npm ci
+      - run: npm run build:shared
+      - run: npm run test -w @savoney/client
+      - run: npm run build -w @savoney/client
+
+  docker:
+    name: Docker images build and run
+    runs-on: ubuntu-latest
+    # Only worth the minutes once the code itself is known good.
+    needs: [quality, test-server, test-client]
+
+    services:
+      # A real database, so the container is exercised the way it will run in
+      # production rather than merely proven to compile.
+      mongo:
+        image: mongo:8
+        ports:
+          - 27017:27017
+        options: >-
+          --health-cmd "mongosh --quiet --eval 'db.adminCommand({ping:1}).ok'"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/setup-buildx-action@v3
+
+      - name: Build API image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: server/Dockerfile
+          push: false
+          load: true
+          tags: savoney-api:ci
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      # Building proves the image assembles; only running it proves the module
+      # graph resolves, the native argon2 binary matches the platform, and the
+      # process actually serves traffic.
+      - name: Start the API container
+        run: |
+          docker run -d --name savoney-api --network host \
+            -e NODE_ENV=production \
+            -e PORT=4000 \
+            -e MONGO_URI=mongodb://127.0.0.1:27017/savoney-ci \
+            -e JWT_ACCESS_SECRET=ci-access-secret-that-is-long-enough-32 \
+            -e JWT_REFRESH_SECRET=ci-refresh-secret-that-is-different-32 \
+            -e APP_URL=https://ci.example.com \
+            -e CORS_ORIGINS=https://ci.example.com \
+            -e SMTP_URL=smtps://user:pass@smtp.example.com:465 \
+            savoney-api:ci
+
+      - name: Wait for it to serve
+        run: |
+          for i in $(seq 1 30); do
+            if curl -sf http://127.0.0.1:4000/api/health > /dev/null; then
+              echo "API answered after ${i}s"
+              exit 0
+            fi
+            sleep 1
+          done
+          echo "::error::API did not become healthy within 30s"
+          docker logs savoney-api
+          exit 1
+
+      - name: Smoke test the running container
+        run: |
+          set -euo pipefail
+          echo "--- liveness ---"
+          curl -sf http://127.0.0.1:4000/api/health | tee /dev/stderr | grep -q '"status":"ok"'
+          echo "--- readiness (proves it reached MongoDB) ---"
+          curl -sf http://127.0.0.1:4000/api/ready | tee /dev/stderr | grep -q '"database":true'
+          echo "--- registration, which exercises argon2's native binary ---"
+          curl -sf -X POST http://127.0.0.1:4000/api/auth/register \
+            -H 'Content-Type: application/json' \
+            -d '{"name":"CI Smoke","email":"ci@example.com","password":"correct-horse-battery"}' \
+            | grep -q accessToken
+          echo "all smoke checks passed"
+
+      - name: Container logs on failure
+        if: failure()
+        run: docker logs savoney-api || true
+
+      - name: Stop the container
+        if: always()
+        run: docker rm -f savoney-api || true
+
+      - name: Build web image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: client/Dockerfile
+          push: false
+          load: true
+          tags: savoney-web:ci
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Verify the web image serves the built app
+        run: |
+          set -euo pipefail
+          docker run -d --name savoney-web -p 8080:80 savoney-web:ci
+          for i in $(seq 1 20); do
+            curl -sf http://127.0.0.1:8080/ > /dev/null && break
+            sleep 1
+          done
+          if ! curl -sf http://127.0.0.1:8080/ > /dev/null; then
+            echo "::error::web container never served a response"
+            docker logs savoney-web
+            exit 1
+          fi
+          curl -sf http://127.0.0.1:8080/ | grep -q '<div id="root">'
+          # Client-side routing: a deep link must return the app, not a 404.
+          curl -sf http://127.0.0.1:8080/transactions | grep -q '<div id="root">'
+          echo "web image serves correctly"
+          docker rm -f savoney-web
