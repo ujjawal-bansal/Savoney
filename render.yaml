@@ -78,7 +78,8 @@ services:
   - type: web
     name: savoney-web
     runtime: static
-    plan: free
+    # No `plan` here: static sites are always free and Render rejects the field
+    # outright ("no such plan free for service type web").
     # The shared workspace must be compiled before the client can typecheck.
     buildCommand: npm ci && npm run build:shared && npm run build -w @savoney/client
     staticPublishPath: ./client/dist
