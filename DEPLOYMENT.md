@@ -1,4 +1,36 @@
-# Deploying Savoney to Render
+# Deploying Savoney
+
+Two supported setups. Both keep the browser on a **single origin**, which is
+what lets the `httpOnly` refresh cookie work at all.
+
+| Setup               | Client             | API           | Config        |
+| ------------------- | ------------------ | ------------- | ------------- |
+| **All Render**      | Render Static Site | Render Docker | `render.yaml` |
+| **Vercel + Render** | Vercel             | Render Docker | `vercel.json` |
+
+The API stays on Render either way: it is a long-running Express server with a
+Mongoose connection pool, in-memory rate limiting and lazy recurrence
+materialisation. Running it on Vercel's serverless functions would need
+per-invocation connection caching and an external rate-limit store, so it is
+not a drop-in.
+
+Vercel is the better host for the _client_: a global CDN with no cold start,
+where a Render free web service sleeps after 15 minutes idle. Its `rewrites`
+proxy `/api/*` to the Render API, so the browser still sees one origin and the
+cookie stays first-party.
+
+Everything below covers the all-Render path. For Vercel, do steps 1 and 2 to
+get the API up, then instead of the Render static site:
+
+1. [vercel.com](https://vercel.com) > **Add New** > **Project** > import this repo
+2. Vercel reads `vercel.json`; leave every setting at its default
+3. **Update the rewrite destination in `vercel.json`** if Render assigned your
+   API a hostname other than `savoney-api.onrender.com`, then push
+4. On the Render API, set `CORS_ORIGINS` and `APP_URL` to your Vercel URL
+
+---
+
+## Deploying to Render
 
 Two services from one repo: a Dockerised API and a static client, with MongoDB
 Atlas for data. Everything below fits in free tiers.
