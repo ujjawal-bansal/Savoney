@@ -93,10 +93,13 @@ read the response past CORS.
 
 ---
 
-## 4. Email for password resets
+## 4. Email for password resets (optional, add later)
 
-The API will not boot in production without `SMTP_URL`, because a password
-reset that silently fails to send is worse than no reset at all.
+Skip this to get deployed, and come back to it.
+
+Without `SMTP_URL` the app runs normally and `/api/auth/forgot-password`
+answers 503 with a clear message. It does not pretend to send an email, and it
+does not stop the deployment.
 
 Any SMTP provider works. Free options with a sender identity:
 

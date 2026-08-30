@@ -32,6 +32,8 @@ services:
       # Provided at deploy time; never committed.
       - key: MONGO_URI
         sync: false
+      # Optional. Leave blank to deploy now: the app runs and password recovery
+      # answers 503 until a transport is set. Add it later without a code change.
       - key: SMTP_URL
         sync: false
 

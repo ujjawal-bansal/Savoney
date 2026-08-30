@@ -1,6 +1,6 @@
 import { createHash, randomBytes, timingSafeEqual } from 'node:crypto';
 import type { ForgotPasswordInput, ResetPasswordInput } from '@savoney/shared';
-import { env } from '../../config/env.js';
+import { env, isProduction } from '../../config/env.js';
 import { logger } from '../../config/logger.js';
 import { ApiError } from '../../lib/api-error.js';
 import { passwordResetEmail, sendMail } from '../../lib/mailer.js';
@@ -23,6 +23,20 @@ export const requestPasswordReset = async (
   input: ForgotPasswordInput,
   context: { ip: string },
 ): Promise<{ devLink?: string }> => {
+  /**
+   * Without a transport there is no way to deliver a link, and answering "check
+   * your inbox" would strand the user waiting for mail that will never arrive.
+   * Say so plainly instead. This check precedes the account lookup so the
+   * response cannot vary by whether the address exists.
+   */
+  if (isProduction && !env.SMTP_URL) {
+    throw new ApiError(
+      503,
+      'Password recovery is not available on this deployment. Contact the site owner.',
+      'EMAIL_NOT_CONFIGURED',
+    );
+  }
+
   const user = await User.findOne({ email: input.email });
 
   if (!user) {

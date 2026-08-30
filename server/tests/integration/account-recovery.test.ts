@@ -392,3 +392,12 @@ describe('delete account', () => {
     expect((await authed(stayer).get('/api/transactions').expect(200)).body.items).toHaveLength(1);
   });
 });
+
+describe('when no mail transport is configured', () => {
+  it('boots and serves the rest of the app', async () => {
+    // The deployment must not be held hostage to one optional feature.
+    await request(app).get('/api/health').expect(200);
+    const user = await createUser();
+    await authed(user).get('/api/transactions').expect(200);
+  });
+});

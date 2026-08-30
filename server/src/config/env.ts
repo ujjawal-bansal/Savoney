@@ -67,8 +67,13 @@ const envSchema = z
 
     /**
      * SMTP connection string, e.g. smtps://user:pass@smtp.example.com:465
-     * Leave unset in development: reset links are then written to the log
-     * instead of sent, so the flow is fully usable without a mail account.
+     *
+     * Optional everywhere. Unset in development, reset links are written to the
+     * log and returned by the API, so the flow is fully usable without a mail
+     * account. Unset in production, the app still runs and password *recovery*
+     * is simply switched off: the endpoint answers 503 rather than accepting a
+     * request it cannot fulfil. Refusing to boot would hold the entire
+     * deployment hostage to one optional feature.
      */
     SMTP_URL: z.string().optional(),
     MAIL_FROM: z.string().default('Savoney <no-reply@savoney.app>'),
@@ -87,13 +92,6 @@ const envSchema = z
         code: 'custom',
         path: ['JWT_REFRESH_SECRET'],
         message: 'Access and refresh secrets must differ in production',
-      });
-    }
-    if (!value.SMTP_URL) {
-      ctx.addIssue({
-        code: 'custom',
-        path: ['SMTP_URL'],
-        message: 'SMTP_URL is required in production, or password reset emails cannot be delivered',
       });
     }
     // `SameSite=None` is only honoured on a Secure cookie, which needs HTTPS.

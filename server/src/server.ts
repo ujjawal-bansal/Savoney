@@ -1,10 +1,18 @@
 import { createApp } from './app.js';
-import { env } from './config/env.js';
+import { env, isProduction } from './config/env.js';
 import { logger } from './config/logger.js';
 import { connectDatabase, disconnectDatabase } from './db/connect.js';
 
 const start = async (): Promise<void> => {
   await connectDatabase();
+
+  // Announce a degraded feature once at boot rather than leaving it to be
+  // discovered by the first user who forgets their password.
+  if (isProduction && !env.SMTP_URL) {
+    logger.warn(
+      'SMTP_URL is not set: password recovery is disabled and /auth/forgot-password will answer 503',
+    );
+  }
 
   const app = createApp();
   const server = app.listen(env.PORT, env.HOST, () => {
